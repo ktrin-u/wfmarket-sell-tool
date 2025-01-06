@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "wfmarket-sell-tool"
+version = "0.1.0"
+description = "personal tool developed in Python in order to have an easy way of checking the floor prices of multiple items"
+authors = ["ktrin-u"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+requests = "^2.32.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

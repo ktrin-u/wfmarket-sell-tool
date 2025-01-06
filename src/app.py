@@ -5,14 +5,15 @@ from pprint import pprint
 import json
 import requests
 
-ENDPOINT = "https://api.warframe.market/v1"
-TIMEOUT = 3
+ENDPOINT = "https://api.warframe.market/v1"  # warframe.market api endpoint
+TIMEOUT = 3  # https request timeout
 
-def get_item_prices(item_name:str) -> list[object]:
+
+def get_item_prices(item_name: str) -> list[object]:
     """Get the order details of item_name as a json"""
     with requests.get(
-        url     = f"{ENDPOINT}/items/{item_name.lower()}/orders",
-        timeout = TIMEOUT
+        url=f"{ENDPOINT}/items/{item_name.lower()}/orders",
+        timeout=TIMEOUT
     ) as result:
         match result.status_code:
             case 200:
@@ -22,6 +23,7 @@ def get_item_prices(item_name:str) -> list[object]:
 
             case _:
                 raise ValueError(f"expected http status 200, got http status {result.status_code}")
+
 
 if __name__ == "__main__":
     resulting_orders = get_item_prices("malignant_force")
