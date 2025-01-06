@@ -16,6 +16,9 @@ warnings.simplefilter("always", RuntimeWarning)  # always show RuntimeWarnings
 
 ENDPOINT = "https://api.warframe.market/v1"  # warframe.market api endpoint
 TIMEOUT = 3  # https request timeout
+REQUEST_LIMIT:int = 3  # wfmarket ToS states a max of 3 requests per second
+request_counter:int = 0  # keeps track of number of requests made during the current second
+last_second_tracker: time.struct_time = time.localtime()  # to ensure compliance with ToS of 3 requests per second
 
 
 class Status(StrEnum):
@@ -23,9 +26,19 @@ class Status(StrEnum):
     ONLINE = auto()  # type: ignore
     OFFLINE = auto()  # type: ignore
 
+def check_request_time_valid() -> bool:
+    global REQUEST_LIMIT, request_counter, last_request_timestamp
+    request_time = time.localtime()
+
+    if request_time.tm_sec != last_second_tracker:
+        request_counter = 0  # reset request_counter when a second has elapsed
+
+    if request_counter >= REQUEST_LIMIT:
+        return False
 
 def get_item_prices(item_name: str) -> list[dict[str, object]]:
     """Get the order details of item_name as a json"""
+    if LAST_REQUEST_TIMESTAMP - request_time >:
     with requests.get(
         url=f"{ENDPOINT}/items/{item_name.lower()}/orders",
         timeout=TIMEOUT
