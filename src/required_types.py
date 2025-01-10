@@ -7,6 +7,7 @@ from enum import StrEnum, auto
 
 T = TypeVar("T")
 K = TypeVar("K")
+Platinum = int
 
 
 class Status(StrEnum):
