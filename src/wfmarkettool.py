@@ -219,7 +219,7 @@ class WFMarketTool:
         resulting_orders = await self.get_item_orders(item_name)
         sell_orders = await self.filter_sell_orders(resulting_orders)
         plat_prices = await self.get_plat_prices(sell_orders)
-        ret = f"{item_name} bottom {order_count} floor prices are: {plat_prices[:order_count]}"
+        ret = f"{item_name} floor prices: {plat_prices[:order_count]}"
         print(ret)
         return ret
 
