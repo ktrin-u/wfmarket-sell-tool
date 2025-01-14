@@ -5,6 +5,7 @@ import asyncio
 import aiohttp
 import logging
 from required_types import Order, Status, WFMarketResponse, Platinum
+from typing import Coroutine, Any
 
 
 class WFMarketTool:
@@ -221,6 +222,23 @@ class WFMarketTool:
         ret = f"{item_name} bottom {order_count} floor prices are: {plat_prices[:order_count]}"
         print(ret)
         return ret
+
+    async def get_multiple_floor_prices(self, item_name_list: list[str], order_count: int = 5) -> list[str]:
+        """
+        Gets the {order_count} lowest prices for multiple items
+
+        Parameters:
+            item_name_list (list[str]): a list containing item_names
+            order_count (int): the number of floor prices to list
+
+        Returns:
+            list[str]: a list containing messages containing the prices of the {order_count} lowest prices
+        """
+        awaitables: list[Coroutine[Any, Any, str]] = []
+        for item_name in item_name_list:
+            awaitables.append(self.get_floor_prices(item_name, order_count))
+
+        return await asyncio.gather(*awaitables)
 
     async def close(self) -> None:
         """
