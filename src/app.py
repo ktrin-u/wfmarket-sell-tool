@@ -6,7 +6,8 @@ import logging
 from wfmarkettool import WFMarketTool
 
 
-logging.basicConfig(filename="app.log", level=logging.WARNING, format="%(asctime)s %(levelname)s %(funcName)s: %(message)s")
+logging.basicConfig(filename="app.log", level=logging.INFO, format="%(asctime)s %(levelname)s %(funcName)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
@@ -23,11 +24,11 @@ async def main() -> None:
         "galvanized_hell",
         "galvanized_savvy",
         "galvanized_acceleration",
-        "galvanized_diffusion"
+        "galvanized_diffusion",
         "galvanized_shot",
         "galvanized_crosshairs"
     ]
-    tool = WFMarketTool()
+    tool = WFMarketTool(logger)
 
     await tool.get_multiple_floor_prices(items)
 
