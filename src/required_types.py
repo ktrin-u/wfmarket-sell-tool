@@ -1,27 +1,34 @@
 """
 Collection of Types and Protocols to ensure static typing
 """
-from typing import TypeVar, TypedDict, Required
+from typing import TypedDict, Required
 from enum import StrEnum, auto
 
 
-T = TypeVar("T")
-K = TypeVar("K")
-Platinum = int
+Platinum = int  # type alias for clarity
 
 
 class Status(StrEnum):
+    """
+    An enum that contains all the possible values for the Warframe Market status
+    """
     INGAME = auto()
     ONLINE = auto()
     OFFLINE = auto()
 
 
 class OrderType(StrEnum):
+    """
+    An enum that contains all possible values for the Warframe Market order type
+    """
     BUY = auto()
     SELL = auto()
 
 
 class User(TypedDict):
+    """
+    A class that defines the contents of the User object for the Warframe Market response
+    """
     reputation: int
     locale: str
     avatar: str
@@ -33,6 +40,9 @@ class User(TypedDict):
 
 
 class Order(TypedDict, total=False):
+    """
+    A class that defines the contents of the Order object for the Warframe Market response
+    """
     creation_date: str
     visible: bool
     quantity: int
@@ -47,8 +57,14 @@ class Order(TypedDict, total=False):
 
 
 class Payload(TypedDict):
+    """
+    A class that defines the contents of the payload object for the Warframe Market response
+    """
     orders: list[Order]
 
 
 class WFMarketResponse(TypedDict, total=False):
+    """
+    A class that defines the contents of the Warframe Market response
+    """
     payload: Payload
