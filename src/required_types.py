@@ -1,10 +1,10 @@
 """
 Collection of Types and Protocols to ensure static typing
 """
-from typing import TypedDict, Required
+from typing import TypedDict, Required, TypeVar
 from enum import StrEnum, auto
 
-
+T = TypeVar("T")
 Platinum = int  # type alias for clarity
 
 

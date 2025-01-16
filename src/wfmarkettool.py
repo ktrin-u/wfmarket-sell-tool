@@ -4,7 +4,9 @@ The class that contains all the functions for the main feature
 import asyncio
 import aiohttp
 import logging
+import pprint
 from required_types import Order, Status, WFMarketResponse, Platinum
+from fastapi_models import FloorPriceResult
 from typing import Coroutine, Any
 
 
@@ -33,10 +35,10 @@ class WFMarketTool:
         self._ENDPOINT = "https://api.warframe.market/v1"
         self._REQUEST_LIMIT: int = 3
         self._request_counter: int = 0
-        self._session = aiohttp.ClientSession()
-        self._lock = asyncio.Lock()
+        self._session: aiohttp.ClientSession | None = None
+        self._lock: asyncio.Lock | None = None
+        self._request_timer: asyncio.Task[None] | None = None
         self._logger = logger
-        self._request_timer = asyncio.create_task(self._request_timer_update())
 
     @property
     def ENDPOINT(self):
@@ -46,11 +48,22 @@ class WFMarketTool:
     def REQUEST_LIMIT(self) -> int:
         return self._REQUEST_LIMIT
 
+    async def initialize(self):
+        """
+        For initializing async objects
+        """
+        self._session = aiohttp.ClientSession()
+        self._lock = asyncio.Lock()
+        self._request_timer = asyncio.create_task(self._request_timer_update())
+
     async def _request_timer_update(self) -> None:
         """
         A periodic timer that refreshes itself every second to ensure compliance with ToS
         """
         while True:
+            if not self._lock:
+                raise Exception("lock object not initialized")
+
             async with self._lock:
                 self.request_counter = 0
                 self._logger.info('request counter refreshed')
@@ -60,6 +73,9 @@ class WFMarketTool:
         """
         Ensures that the request is still within ToS limits
         """
+        if not self._lock:
+            raise Exception("lock object not initialized")
+
         async with self._lock:  # need to lock this part to ensure that request_counter is consistent
             if self.request_counter >= self.REQUEST_LIMIT:
                 return False
@@ -98,6 +114,9 @@ class WFMarketTool:
             self._logger.info("request_limit reached, trying again in 1s")
             await asyncio.sleep(1)
             return await self.get_payload(item_name)
+
+        if self._session is None:
+            raise Exception("aiohttp ClientSession not initialized")
 
         async with self._session.get(
             url=f"{self.ENDPOINT}/items/{item_name.lower()}/orders",
@@ -205,7 +224,7 @@ class WFMarketTool:
         prices.sort()
         return prices
 
-    async def get_floor_prices(self, item_name: str, order_count: int = 5) -> str:
+    async def get_floor_prices(self, item_name: str, order_count: int = 5) -> FloorPriceResult:
         """
         Gets the {order_count} lowest prices for {item_name}
 
@@ -214,35 +233,35 @@ class WFMarketTool:
             order_count (int): the number of floor prices to list
 
         Returns:
-            str: a message containing the prices of the {order_count} lowest prices
+            FloorPriceResult: a Pydantic model that contains the item name and the bottom {order_count} prices
         """
         resulting_orders = await self.get_item_orders(item_name)
         sell_orders = await self.filter_sell_orders(resulting_orders)
         plat_prices = await self.get_plat_prices(sell_orders)
-        ret = f"{item_name} floor prices: {plat_prices[:order_count]}"
-        print(ret)
-        return ret
+        return FloorPriceResult(item_name=item_name, prices=plat_prices[:order_count])
 
-    async def get_multiple_floor_prices(self, item_name_list: list[str], order_count: int = 5) -> list[str]:
+    async def print_multiple_floor_prices(self, item_name_list: list[str], order_count: int = 5) -> None:
         """
         Gets the {order_count} lowest prices for multiple items
 
         Parameters:
             item_name_list (list[str]): a list containing item_names
             order_count (int): the number of floor prices to list
-
-        Returns:
-            list[str]: a list containing messages containing the prices of the {order_count} lowest prices
         """
-        awaitables: list[Coroutine[Any, Any, str]] = []
+        awaitables: list[Coroutine[Any, Any, FloorPriceResult]] = []
         for item_name in item_name_list:
             awaitables.append(self.get_floor_prices(item_name, order_count))
 
-        return await asyncio.gather(*awaitables)
+        results = await asyncio.gather(*awaitables)
+
+        for floor_price_result in results:
+            pprint.pprint(f"{floor_price_result.item_name}: {floor_price_result.prices}")
 
     async def close(self) -> None:
         """
         Cleans up the session and request timer task
         """
-        await self._session.close()
-        self._request_timer.cancel()
+        if self._session:
+            await self._session.close()
+        if self._request_timer:
+            self._request_timer.cancel()

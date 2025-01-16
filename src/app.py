@@ -29,8 +29,9 @@ async def main() -> None:
         "galvanized_crosshairs"
     ]
     tool = WFMarketTool(logger)
+    await tool.initialize()
 
-    await tool.get_multiple_floor_prices(items)
+    await tool.print_multiple_floor_prices(items)
 
     await tool.close()
 
