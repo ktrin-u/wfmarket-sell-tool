@@ -5,6 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi_models import FloorPriceResult
+from required_types import OrderType, ProfileOrder
 from wfmarkettool import WFMarketTool
 
 logging.basicConfig(filename="fastapi_main.log", level=logging.INFO, format="%(asctime)s %(levelname)s %(funcName)s: %(message)s")
@@ -34,7 +35,16 @@ async def get_floor_prices(item_name: str = "", order_count: int = 5) -> FloorPr
     """
     ret = []
     if wftool:
-        ret = await wftool.get_floor_prices(item_name, order_count)
+        ret = await wftool.get_item_floor_prices(item_name, order_count)
     else:
         raise Exception("WFtool not initialized")
+    return ret
+
+
+@app.get("/wfmarkettool/profile/{username}/sell")
+async def get_profile_orders(username: str = "") -> list[ProfileOrder]:
+    if wftool is None:
+        raise Exception("WFtool not initialized")
+
+    ret = await wftool.get_profile_orders(username, OrderType.SELL)
     return ret

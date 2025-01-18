@@ -25,6 +25,21 @@ class OrderType(StrEnum):
     SELL = auto()
 
 
+# class APIOptions(StrEnum):
+#     """
+#     An enum that contains the path of the actions supported by the warframe.market api
+#     """
+#     GET_TRADEABLE_ITEMS = "/items"
+#     GET_ITEM = "/items"
+
+class WFToolOperations(StrEnum):
+    """
+    An enum that contains the path of the actions supported by the wfmarkettool
+    """
+    ITEM_ORDERS = auto()
+    PROFILE_ORDERS = auto()
+
+
 class User(TypedDict):
     """
     A class that defines the contents of the User object for the Warframe Market response
@@ -39,28 +54,68 @@ class User(TypedDict):
     status: Status
 
 
+class ItemNameLocalization(TypedDict, total=False):
+    item_name: str
+
+
+class Item(TypedDict, total=False):
+    thumb: str
+    icon: str
+    url_name: Required[str]
+    id: Required[str]
+    vaulted: bool
+    icon_format: str
+    sub_icon: str | None
+    subtypes: list[str]
+    mod_max_rank: int
+    tags: list[str]
+    en: ItemNameLocalization
+    ru: ItemNameLocalization
+    ko: ItemNameLocalization
+    fr: ItemNameLocalization
+    sv: ItemNameLocalization
+    de: ItemNameLocalization
+    zh_hant: ItemNameLocalization
+    zh_hans: ItemNameLocalization
+    pt: ItemNameLocalization
+    es: ItemNameLocalization
+    pl: ItemNameLocalization
+    cs: ItemNameLocalization
+    uk: ItemNameLocalization
+    it: ItemNameLocalization
+
+
 class Order(TypedDict, total=False):
-    """
-    A class that defines the contents of the Order object for the Warframe Market response
-    """
     creation_date: str
     visible: bool
     quantity: int
-    user: User
+    platinum: Platinum
     last_update: str
-    platinum: int
-    order_type: OrderType
-    platform: str
-    id: Required[str]
-    mod_rank: str
     region: str
+    id: Required[str]
+    order_type: OrderType
+    mod_rank: int
+    subtype: str
 
 
-class Payload(TypedDict):
+class ItemOrder(Order, total=False):
+    """
+    A class that defines the contents of the Order object for the Warframe Market response
+    """
+    user: User
+
+
+class ProfileOrder(Order, total=False):
+    item: Item
+
+
+class Payload(TypedDict, total=False):
     """
     A class that defines the contents of the payload object for the Warframe Market response
     """
-    orders: list[Order]
+    orders: list[ItemOrder]  # result from GET request to API_endpoint/items/{item_name}/orders
+    sell_orders: list[ProfileOrder]  # result from GET request to API_endpoint/profile/{username}/orders
+    buy_orders: list[ProfileOrder]   # result from GET request to API_endpoint/profile/{username}/orders
 
 
 class WFMarketResponse(TypedDict, total=False):

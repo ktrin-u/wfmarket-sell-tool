@@ -5,14 +5,16 @@ import asyncio
 import aiohttp
 import logging
 import pprint
-from required_types import Order, Status, WFMarketResponse, Platinum
+from required_types import ItemOrder, Status, Payload, Platinum, OrderType, ProfileOrder, Order, WFToolOperations, WFMarketResponse
 from fastapi_models import FloorPriceResult
-from typing import Coroutine, Any
+from typing import Sequence
+from pathlib import Path
 
 
 class WFMarketTool:
     """
-    Class for the WF Market sell tool
+    Class for the WF Market Tool, designed for async
+    Made to simplify querying the prices of multiple items
 
     Attributes:
         ENDPOINT (constant): the warframe.market api endpoint
@@ -39,6 +41,7 @@ class WFMarketTool:
         self._lock: asyncio.Lock | None = None
         self._request_timer: asyncio.Task[None] | None = None
         self._logger = logger
+        self._item_db: Path
 
     @property
     def ENDPOINT(self):
@@ -47,14 +50,6 @@ class WFMarketTool:
     @property
     def REQUEST_LIMIT(self) -> int:
         return self._REQUEST_LIMIT
-
-    async def initialize(self):
-        """
-        For initializing async objects
-        """
-        self._session = aiohttp.ClientSession()
-        self._lock = asyncio.Lock()
-        self._request_timer = asyncio.create_task(self._request_timer_update())
 
     async def _request_timer_update(self) -> None:
         """
@@ -69,7 +64,7 @@ class WFMarketTool:
                 self._logger.info('request counter refreshed')
             await asyncio.sleep(1)
 
-    async def check_request_time_valid(self) -> bool:
+    async def _check_request_time_valid(self) -> bool:
         """
         Ensures that the request is still within ToS limits
         """
@@ -84,7 +79,7 @@ class WFMarketTool:
             self._logger.info("new request made")
             return True
 
-    def _process_item_name(self, item_name: str) -> str:
+    async def _process_name(self, item_name: str) -> str:
         """
         Removes trailing characters and replaces all spaces with underscores
 
@@ -95,7 +90,7 @@ class WFMarketTool:
         ret = item_name.replace(" ", "_")
         return ret
 
-    async def get_payload(self, item_name: str) -> WFMarketResponse:
+    async def _get_payload(self, operation: WFToolOperations, target_name: str) -> Payload | None:
         """
         Sends a GET response to the API endpoint and attempts to acquire the
         payload value of the response
@@ -106,50 +101,50 @@ class WFMarketTool:
         Returns:
             WFMarketResponse: the response in the form of a dictionary to expect from a GET request
         """
-        item_name = self._process_item_name(item_name)  # attempt to generalize input parameter
-
-        self._logger.info(f"attempting to acquire {item_name}")
-
-        if not (await self.check_request_time_valid()):
-            self._logger.info("request_limit reached, trying again in 1s")
-            await asyncio.sleep(1)
-            return await self.get_payload(item_name)
-
         if self._session is None:
             raise Exception("aiohttp ClientSession not initialized")
 
+        if not (await self._check_request_time_valid()):
+            self._logger.info("request_limit reached, trying again in 1s")
+            await asyncio.sleep(1)
+            return await self._get_payload(operation, target_name)
+
+        target_name = await self._process_name(target_name)  # attempt to generalize input parameter
+        self._logger.info(f"attempting to acquire {operation.value} {target_name}")
+        target_url: str = f"{self.ENDPOINT}"
+
+        match operation:
+            case WFToolOperations.ITEM_ORDERS:
+                target_url += f"/items/{target_name.lower()}/orders"   # ensure lower case
+
+            case WFToolOperations.PROFILE_ORDERS:
+                target_url += f"/profile/{target_name}/orders"   # usernames are case-sensitive
+
+            # case _:
+            #     self._logger.error("unsupported operation found, raising exception")
+            #     raise Exception("unsupported operation found")
+
+        self._logger.info(f"target url: {target_url}")
+
         async with self._session.get(
-            url=f"{self.ENDPOINT}/items/{item_name.lower()}/orders",
+            url=target_url,
         ) as result:
             match result.status:
                 case 200:
-                    self._logger.info(f"successfully acquired {item_name}")
-                    return await result.json()
+                    self._logger.info(f"successfully acquired {operation.value} {target_name}")
+                    response: WFMarketResponse = await result.json()
+                    if response is not None:
+                        return response.get("payload")
                 case _:
-                    self._logger.info(f"expected http status 200, got http code {result.status}")
-                    self._logger.info(f"failed to acquire {item_name}")
-                    return {}
+                    self._logger.warning(f"expected http status 200, got http code {result.status}")
 
-    async def get_item_orders(self, item_name: str) -> list[Order]:
-        """
-        Get the order key of the payload
+        self._logger.warning(f"failed to acquire {operation.value} {target_name}", RuntimeWarning)
+        return {}
 
-        Parameters:
-            item_name (str): the name of the item
+    async def _validate_item_name(self, item_name: str) -> bool:
+        ...
 
-        Returns:
-            list[Order]: a list of all the Orders for {item_name}
-        """
-        result = await self.get_payload(item_name)
-        payload = result.get("payload")
-        if payload is not None:
-            orders: list[Order] = payload.get("orders")
-            return orders
-
-        logging.warning("unable to get orders from payload None")
-        return list()
-
-    async def filter_sell_orders(self, orders: list[Order]) -> list[Order]:
+    async def _filter_item_orders(self, orders: list[ItemOrder], key_order_type: OrderType = OrderType.SELL) -> list[ItemOrder]:
         """
         Limit all orders to sell orders only
 
@@ -162,21 +157,7 @@ class WFMarketTool:
         if type(orders) is not list:
             raise TypeError("argument is expected to be of type list")
 
-        def filter_func(order: Order) -> bool:
-            order_type = order.get("order_type")
-            if order_type is not None:
-                match order_type:
-                    case "sell":
-                        return remove_non_in_game(order)
-                    case "buy":
-                        return False
-                    case _:
-                        logging.warning(f"unsupported order type \"{order_type}\" found")
-                        return False
-            logging.warning(f"order with id {order["id"]} is invalid", RuntimeWarning, )
-            return False
-
-        def remove_non_in_game(order: Order) -> bool:
+        def remove_non_in_game(order: ItemOrder) -> bool:
             user = order.get("user")
             if user is not None:
                 status = user.get("status")
@@ -189,15 +170,25 @@ class WFMarketTool:
                         case Status.OFFLINE.value:
                             return False
                         case _:
-                            logging.warning(f"unsupported status type found in order id {order["id"]}")
+                            logging.warning(f"unsupported status type found in order id {order["id"]}", RuntimeWarning)
                             return False
             raise Exception(f"order {order["id"]} has no user key")
 
+        def filter_func(order: ItemOrder) -> bool:
+            order_type = order.get("order_type")
+            if order_type is None:
+                logging.warning(f"order with id {order["id"]} is invalid", RuntimeWarning)
+                return False
+            if order_type is not None and order_type == key_order_type.value:
+                return remove_non_in_game(order)
+            # logging.warning(f"unsupported order type \"{order_type}\" found")
+            return False
+
         return list(filter(filter_func, orders))
 
-    async def get_plat_prices(self, sell_orders: list[Order], sort_descending: bool = False) -> list[Platinum]:
+    async def _get_plat_prices(self, orders: Sequence[Order], sort_descending: bool = False) -> list[Platinum]:
         """
-        Gets all the platinum prices from the a list of sell orders
+        Gets all the platinum prices from the a list of orders
 
         Parameters:
             sell_orders (list[Order]): a list of sell-orders
@@ -206,11 +197,8 @@ class WFMarketTool:
         Returns:
             list[Platinum]: a list of containing all the prices of the orders
         """
-        if type(sell_orders) is not list:
-            raise TypeError("argument is expected to be of type list")
-
         prices: list[Platinum] = []
-        for order in sell_orders:
+        for order in orders:
             plat = order.get("platinum")
             if type(plat) is Platinum:
                 prices.append(plat)
@@ -224,7 +212,46 @@ class WFMarketTool:
         prices.sort()
         return prices
 
-    async def get_floor_prices(self, item_name: str, order_count: int = 5) -> FloorPriceResult:
+    async def initialize(self) -> None:
+        """
+        For initializing async objects
+        """
+        self._session = aiohttp.ClientSession()
+        self._lock = asyncio.Lock()
+        self._request_timer = asyncio.create_task(self._request_timer_update())
+
+    async def close(self) -> None:
+        """
+        Cleans up the session and request timer task
+        """
+        if self._session:
+            await self._session.close()
+        if self._request_timer:
+            self._request_timer.cancel()
+
+    async def get_item_orders(self, item_name: str, order_type: OrderType = OrderType.SELL) -> list[ItemOrder]:
+        """
+        Get the order key of the payload
+
+        Parameters:
+            item_name (str): the name of the item
+
+        Returns:
+            list[Order]: a list of all the Orders for {item_name}
+        """
+        payload = await self._get_payload(WFToolOperations.ITEM_ORDERS, item_name)
+        if payload is None:
+            self._logger.warning("unable to get orders from payload None", RuntimeWarning)
+            return list()
+
+        orders: list[ItemOrder] | None = payload.get("orders")
+        if orders is None:
+            self._logger.warning(f"failed to acquire item orders of {item_name}", RuntimeWarning)
+            return list()
+
+        return await self._filter_item_orders(orders, order_type)
+
+    async def get_item_floor_prices(self, item_name: str, order_count: int = 5) -> FloorPriceResult:
         """
         Gets the {order_count} lowest prices for {item_name}
 
@@ -235,9 +262,8 @@ class WFMarketTool:
         Returns:
             FloorPriceResult: a Pydantic model that contains the item name and the bottom {order_count} prices
         """
-        resulting_orders = await self.get_item_orders(item_name)
-        sell_orders = await self.filter_sell_orders(resulting_orders)
-        plat_prices = await self.get_plat_prices(sell_orders)
+        sell_orders = await self.get_item_orders(item_name, OrderType.SELL)
+        plat_prices = await self._get_plat_prices(sell_orders)
         return FloorPriceResult(item_name=item_name, prices=plat_prices[:order_count])
 
     async def print_multiple_floor_prices(self, item_name_list: list[str], order_count: int = 5) -> None:
@@ -248,20 +274,32 @@ class WFMarketTool:
             item_name_list (list[str]): a list containing item_names
             order_count (int): the number of floor prices to list
         """
-        awaitables: list[Coroutine[Any, Any, FloorPriceResult]] = []
+        awaitables: list[asyncio.Task[FloorPriceResult]] = []
         for item_name in item_name_list:
-            awaitables.append(self.get_floor_prices(item_name, order_count))
+            task = asyncio.create_task(self.get_item_floor_prices(item_name, order_count))
+            task.add_done_callback(
+                lambda ret: pprint.pprint(f"{ret.result().item_name}: {ret.result().prices}")
+            )
+            awaitables.append(task)
+            # awaitables.append(self.get_floor_prices(item_name, order_count))
 
-        results = await asyncio.gather(*awaitables)
+        await asyncio.wait(awaitables)
 
-        for floor_price_result in results:
-            pprint.pprint(f"{floor_price_result.item_name}: {floor_price_result.prices}")
+    async def get_profile_orders(self, username: str, order_type: OrderType = OrderType.SELL) -> list[ProfileOrder]:
+        payload = await self._get_payload(WFToolOperations.PROFILE_ORDERS, username)
+        if payload is None:
+            self._logger.warning("unable to get orders from payload None", RuntimeWarning)
+            return list()
 
-    async def close(self) -> None:
-        """
-        Cleans up the session and request timer task
-        """
-        if self._session:
-            await self._session.close()
-        if self._request_timer:
-            self._request_timer.cancel()
+        ret: list[ProfileOrder] | None = None
+        match order_type:
+            case OrderType.SELL:
+                ret = payload.get("sell_orders")
+
+            case OrderType.BUY:
+                ret = payload.get("buy_orders")
+
+        return ret if ret is not None else list()
+
+    async def verify_profile_orders_prices(self, profile_orders: list[ProfileOrder]) -> None:
+        ...
