@@ -6,7 +6,7 @@ import aiohttp
 import logging
 import pprint
 from required_types import ItemOrder, Status, Payload, Platinum, OrderType, ProfileOrder, Order, WFToolOperations, WFMarketResponse
-from fastapi_models import FloorPriceResult
+from fastapi_models import FloorPriceResult, ProfileOrderOptimzerResult
 from typing import Sequence
 from pathlib import Path
 
@@ -301,5 +301,52 @@ class WFMarketTool:
 
         return ret if ret is not None else list()
 
-    async def verify_profile_orders_prices(self, profile_orders: list[ProfileOrder]) -> None:
-        ...
+    async def verify_profile_orders_prices(
+        self,
+        username: str,
+        order_type: OrderType = OrderType.SELL,
+        order_count: int = 5,
+        visible_only: bool = True
+    ) -> list[ProfileOrderOptimzerResult]:
+        """
+        This function is used to determine if all listed visible {order_type} orders are within the {order_count} lowest prices
+        to ensure sell time is fast
+
+        Retrieves all the {order_type} orders of user {username}
+        Then, it matches each order of the retrieved orders to its corresponding list of {order_count} lowest prices
+        """
+        # get all profile orders
+        profile_orders = await self.get_profile_orders(username, order_type)
+
+        # remove all non visible orders if specified
+        if visible_only:
+            self._logger.info("removing hidden orders")
+
+            def filter_visibility(order: Order) -> bool:
+                visibility = order.get("visible")
+                return True if visibility else False
+
+            profile_orders = list(filter(filter_visibility, profile_orders))
+
+        # get floor prices of each order
+        ret: list[ProfileOrderOptimzerResult] = list()
+
+        for profile_order in profile_orders:
+            item_details = profile_order.get("item")
+            if item_details is None:
+                msg = "profile order with no item key encountered"
+                self._logger.error(msg)
+                raise Exception(msg)
+
+            item_name = item_details.get("url_name")
+            floor_price_result = await self.get_item_floor_prices(item_name, order_count)
+
+            ret.append(
+                ProfileOrderOptimzerResult(
+                    item_name=item_name,
+                    listed_price=profile_order.get("platinum"),
+                    floor_prices=floor_price_result.prices
+                )
+            )
+
+        return ret

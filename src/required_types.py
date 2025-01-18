@@ -89,7 +89,7 @@ class Order(TypedDict, total=False):
     creation_date: str
     visible: bool
     quantity: int
-    platinum: Platinum
+    platinum: Required[Platinum]
     last_update: str
     region: str
     id: Required[str]
@@ -102,11 +102,11 @@ class ItemOrder(Order, total=False):
     """
     A class that defines the contents of the Order object for the Warframe Market response
     """
-    user: User
+    user: Required[User]
 
 
 class ProfileOrder(Order, total=False):
-    item: Item
+    item: Required[Item]
 
 
 class Payload(TypedDict, total=False):
