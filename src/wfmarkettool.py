@@ -1,14 +1,16 @@
 """
 The class that contains all the functions for the main feature
 """
+import json
+import pprint
 import asyncio
 import aiohttp
 import logging
-import pprint
+import logging.config
+from pathlib import Path
+from typing import Sequence
 from required_types import ItemOrder, Status, Payload, Platinum, OrderType, ProfileOrder, Order, WFToolOperations, WFMarketResponse
 from fastapi_models import FloorPriceResult, ProfileOrderOptimzerResult
-from typing import Sequence
-from pathlib import Path
 
 
 class WFMarketTool:
@@ -26,7 +28,7 @@ class WFMarketTool:
         _request_timer (Task): a reference to the timer task
 
     """
-    def __init__(self, logger: logging.Logger = logging.getLogger(__name__)) -> None:
+    def __init__(self, logger: logging.Logger | None = None) -> None:
         """
         Initializes a WFMarketTool object
 
@@ -40,8 +42,18 @@ class WFMarketTool:
         self._session: aiohttp.ClientSession | None = None
         self._lock: asyncio.Lock | None = None
         self._request_timer: asyncio.Task[None] | None = None
-        self._logger = logger
         self._item_db: Path
+
+        if logger is None:
+            config = {}
+            with open(Path("cfg/logger.json", "r")) as cfg:
+                config = json.load(cfg)
+                config["handlers"]["file"]["filename"] = f"{__name__}.log"
+
+            logging.config.dictConfig(config)
+            self._logger = logging.getLogger(__name__)
+        else:
+            self._logger: logging.Logger = logger
 
     @property
     def ENDPOINT(self):
@@ -50,6 +62,23 @@ class WFMarketTool:
     @property
     def REQUEST_LIMIT(self) -> int:
         return self._REQUEST_LIMIT
+
+    async def initialize(self) -> None:
+        """
+        For initializing async objects
+        """
+        self._session = aiohttp.ClientSession()
+        self._lock = asyncio.Lock()
+        self._request_timer = asyncio.create_task(self._request_timer_update())
+
+    async def close(self) -> None:
+        """
+        Cleans up the session and request timer task
+        """
+        if self._session:
+            await self._session.close()
+        if self._request_timer:
+            self._request_timer.cancel()
 
     async def _request_timer_update(self) -> None:
         """
@@ -211,23 +240,6 @@ class WFMarketTool:
 
         prices.sort()
         return prices
-
-    async def initialize(self) -> None:
-        """
-        For initializing async objects
-        """
-        self._session = aiohttp.ClientSession()
-        self._lock = asyncio.Lock()
-        self._request_timer = asyncio.create_task(self._request_timer_update())
-
-    async def close(self) -> None:
-        """
-        Cleans up the session and request timer task
-        """
-        if self._session:
-            await self._session.close()
-        if self._request_timer:
-            self._request_timer.cancel()
 
     async def get_item_orders(self, item_name: str, order_type: OrderType = OrderType.SELL) -> list[ItemOrder]:
         """
